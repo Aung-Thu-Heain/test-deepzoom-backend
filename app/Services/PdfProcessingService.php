@@ -45,7 +45,7 @@ class PdfProcessingService
             '-f',
             (string) $pageNumber,
             '-l',
-            (string) $pageNumber,
+            (string) $pageNumber, 
             '-singlefile',
             $pdfPath,
             $outputPrefix,
@@ -97,13 +97,17 @@ class PdfProcessingService
     public function makeThumbnail(string $imagePath, string $thumbnailPath, int $size = 512): void
     {
         // Fits the image inside a size x size box, preserving aspect ratio.
+        // libvips accepts width as a positional argument; height is an option.
         $result = Process::run([
             'vips',
             'thumbnail',
             $imagePath,
             $thumbnailPath,
             (string) $size,
+            '--height',
             (string) $size,
+            '--size',
+            'both',
         ]);
 
         if (! $result->successful()) {
