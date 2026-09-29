@@ -80,14 +80,25 @@ class ProcessPlanPdf implements ShouldQueue
                     $s3->uploadFile($file->getPathname(), $key);
                 }
 
-                // create the PlanPage record
-                PlanPage::create([
-                    'plan_id' => $this->plan->id,
-                    'page_number' => $pageNumber,
-                    'width' => $width,
-                    'height' => $height,
-                    'dzi_key' => $dziKey,
-                    'thumbnail_key' => $thumbKey,
+                // Keep this write idempotent: a retried job may have already
+                // recorded this page before failing later in the pipeline.
+                PlanPage::upsert([
+                    [
+                        'plan_id' => $this->plan->id,
+                        'page_number' => $pageNumber,
+                        'width' => $width,
+                        'height' => $height,
+                        'dzi_key' => $dziKey,
+                        'thumbnail_key' => $thumbKey,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                ], ['plan_id', 'page_number'], [
+                    'width',
+                    'height',
+                    'dzi_key',
+                    'thumbnail_key',
+                    'updated_at',
                 ]);
 
                 $processedPages++;
