@@ -67,10 +67,21 @@ class ProcessPlanPdf implements ShouldQueue
 
                 // upload .dzi, tiles and thumbnail to S3
                 $pageKeyBase = 'demo/plans/'.$this->plan->id.'/pages/'.$pageNumber;
+                $pageOutputDir = $tmpDir.'/pages/'.$pageNumber;
                 $dziKey = $pageKeyBase.'/page.dzi';
                 $thumbKey = $pageKeyBase.'/thumbnail.jpg';
 
-                foreach (File::allFiles($tmpDir.'/pages/'.$pageNumber) as $file) {
+                if (! File::exists($pageOutputDir.'/page.dzi') || ! File::exists($pageOutputDir.'/thumbnail.jpg')) {
+                    throw new \RuntimeException("DZI or thumbnail output is missing for page {$pageNumber}.");
+                }
+
+                $outputFiles = File::allFiles($pageOutputDir);
+
+                if ($outputFiles === []) {
+                    throw new \RuntimeException("No DZI or thumbnail files were generated for page {$pageNumber}.");
+                }
+
+                foreach ($outputFiles as $file) {
                     $key = match ($file->getFilename()) {
                         'page.dzi' => $dziKey,
                         'thumbnail.jpg' => $thumbKey,
@@ -79,6 +90,13 @@ class ProcessPlanPdf implements ShouldQueue
 
                     $s3->uploadFile($file->getPathname(), $key);
                 }
+
+                Log::info('Uploaded processed page objects to S3', [
+                    'plan_id' => $this->plan->id,
+                    'page' => $pageNumber,
+                    'object_count' => count($outputFiles),
+                    'key_prefix' => $pageKeyBase.'/',
+                ]);
 
                 // Keep this write idempotent: a retried job may have already
                 // recorded this page before failing later in the pipeline.

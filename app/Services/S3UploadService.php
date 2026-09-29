@@ -13,10 +13,16 @@ class S3UploadService
     public function presignedUploadUrl(string $key, string $contentType = 'application/pdf'): string
     {
         try {
-            // Native Laravel helper for S3 presigned PUT URLs.
-            return Storage::disk('s3')->temporaryUploadUrl($key, now()->addMinutes(15), [
+            // Laravel 12 returns ['url' => ..., 'headers' => ...] for upload URLs.
+            $upload = Storage::disk('s3')->temporaryUploadUrl($key, now()->addMinutes(15), [
                 'ContentType' => $contentType,
             ]);
+
+            if (is_array($upload) && isset($upload['url']) && is_string($upload['url'])) {
+                return $upload['url'];
+            }
+
+            throw new RuntimeException('temporaryUploadUrl() did not return a URL.');
         } catch (\Throwable $e) {
             // Fallback using the AWS SDK directly.
             Log::info('temporaryUploadUrl() fell back to the AWS SDK: '.$e->getMessage());
@@ -65,13 +71,20 @@ class S3UploadService
         try {
             // Demo-only: make generated tiles publicly readable over HTTP so
             // OpenSeadragon can fetch the .dzi and tile images without auth.
-            Storage::disk('s3')->put($key, $contents, ['ACL' => 'public-read']);
+            $uploaded = Storage::disk('s3')->put($key, $contents, ['ACL' => 'public-read']);
         } catch (\Throwable $e) {
-            // Some buckets disable public ACLs; fall back to private so the
-            // upload itself still succeeds (bucket policy must allow public
-            // reads in that case - see README -> S3 setup).
-            Log::warning("Public ACL failed for {$key}, retrying private: ".$e->getMessage());
-            Storage::disk('s3')->put($key, $contents);
+            Log::warning("Public ACL upload failed for {$key}, retrying private: ".$e->getMessage());
+            $uploaded = false;
+        }
+
+        if (! $uploaded) {
+            // Some buckets disable public ACLs; retry privately. Check the
+            // result because the S3 disk is configured with throw=false.
+            $uploaded = Storage::disk('s3')->put($key, $contents);
+        }
+
+        if (! $uploaded) {
+            throw new RuntimeException("S3 returned false while uploading object: {$key}");
         }
     }
 
